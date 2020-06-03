@@ -6,6 +6,7 @@ import { sp } from '@pnp/sp';
 
 //Updated Jan 5, 2020 per https://pnp.github.io/pnpjs/getting-started/
 import { Web } from "@pnp/sp/presets/all";
+import { WebPartContext } from '@microsoft/sp-webpart-base';
 
 import { Pivot, PivotItem, PivotLinkSize, PivotLinkFormat, IPivotStyles, IPivotStyleProps } from 'office-ui-fabric-react/lib/Pivot';
 import { Label, ILabelStyles } from 'office-ui-fabric-react/lib/Label';
@@ -21,12 +22,13 @@ import { Link } from 'office-ui-fabric-react/lib/Link';
 import { Toggle } from 'office-ui-fabric-react/lib/Toggle';
 
 import ChartsPage from './Charts/chartsPage';
+import MyProjectPage from './Project/ProjectEditPage';
+import { ProjectMode } from './Project/ProjectEditPage';
 import InfoPage from './HelpInfo/infoPages';
 
 import CenterPane from './Project/CenterPane';
 
 import { ISelectedStory, defStory, ISelectedUser, curUser } from './Charts/chartsPage';
-
 
 import * as strings from 'TrackMyTime7WebPartStrings';
 import Utils from './utils';
@@ -46,7 +48,7 @@ import { getHelpfullError, } from '../../../services/ErrorHandler';
 import { camelize, } from '../../../services/stringServices';
 
 
-import { buildFormFields } from './fields/fieldDefinitions';
+import { buildFormFields, buildProjectFormFields } from './fields/fieldDefinitions';
 
 import ButtonCompound from './createButtons/ICreateButtons';
 import { IButtonProps,ISingleButtonProps,IButtonState } from "./createButtons/ICreateButtons";
@@ -61,10 +63,56 @@ import * as sliderBuilders from './fields/sliderFieldBuilder';
 import * as smartLinks from './ActivityURL/ActivityURLMasks';
 import * as dateBuilders from './fields/dateFieldBuilder';
 
+import  { ICommandBarState, ICommandBarProps} from './Project/ProjectCommandBar';
+import MyCommandBar from './Project/ProjectCommandBar';
+import MyCommandBarNew from './Project/ProjectCommandNew';
   
 const labelStyles: Partial<IStyleSet<ILabelStyles>> = {
   root: { marginTop: 10 }
 };
+
+const allProjEditOptions = cleanProjEditOptions('activity;advanced;people;reporting;task');
+
+const defProjEditOptions = cleanProjEditOptions('people;reporting');
+
+
+export const statusChoices = [`0. Review`, `1. Plan`, `2. In Process`, `3. Verify`, `4. Complete`, `8. Parking lot`, `9. Cancelled`,`9. Closed`];
+export const defStatus = `0. Review`;
+export const activityTMTChoices = [`TMT Issue`, `Socialiis Issue`];
+
+/**
+ * This function takes a string with ;, converts to array of strings and removes empty elements (like if ; is at the end.)
+ * @param str
+ */
+export function cleanProjEditOptions( str : string ){
+
+  if (str == null ) { return null; }
+
+  let arr = str.split(';').sort();
+
+  let filteredProjectEditOptions = arr.filter( (el) => {
+    return el != null;
+  });
+
+  return filteredProjectEditOptions.join(';');
+
+}
+
+export function getColumnProp( findProp: string, findMe : string, returnProp: string, arr: any ){
+
+  if (findProp == null ) { return null; }
+  if (returnProp == null ) { return null; }
+
+  let result = null;
+  for (let item of arr) {
+    if (item[findProp] === findMe ) { result = item[returnProp]; }
+  }
+
+  //console.log('columnProp ' + findMe + ' / ' + returnProp + ': ', result);
+
+  return result;
+
+}
 
 export default class TrackMyTime7 extends React.Component<ITrackMyTime7Props, ITrackMyTime7State> {
 
@@ -132,6 +180,7 @@ export default class TrackMyTime7 extends React.Component<ITrackMyTime7Props, IT
 
   private createSmartText(title, name) {
     let smart : ISmartText = {
+      projListValue: '',
       value: '',
       required: false,
       hidden: false,
@@ -343,6 +392,105 @@ export default class TrackMyTime7 extends React.Component<ITrackMyTime7Props, IT
 
   }
 
+  private createProjectTimeTracking(pTimeTarget: any) {
+    let daily: any = false;
+    let weekly: any = false;
+    let total: any = false;
+    let projListValue = pTimeTarget;
+
+    if (pTimeTarget) {
+      let ttOptions = pTimeTarget.split(';');
+      for (let opt of ttOptions) {
+        let thisOption = opt.split('=');
+        if (thisOption[1] && thisOption[0].toLowerCase() === 'daily') {
+          daily = parseInt(thisOption[1]);
+        } else if (thisOption[1] && thisOption[0].toLowerCase() === 'weekly') {
+          weekly = parseInt(thisOption[1]);
+        } else if (thisOption[1] && thisOption[0].toLowerCase() === 'total') {
+          total = parseInt(thisOption[1]);
+        }
+      }
+    }
+
+    let targetInfo : IProjectTarget = {
+      projListValue: projListValue,
+      value: pTimeTarget,
+      daily: daily ? daily : 0,
+      weekly: weekly ? weekly : 0,
+      total: total ? total : 0,
+      dailyStatus: daily ? true : false,
+      weeklyStatus: weekly ? true : false,
+      totalStatus: total ? true : false,
+    };
+
+    return targetInfo;
+  }
+
+  private createProjOptionsObject() {
+
+    let projOptions: IProjectOptions =  {
+      showLink: null,
+      activity: null,
+      type: null,
+      href: null,
+      title: null,
+  
+      optionString: null,
+      optionArray: null,
+      bgColor: null,
+      font: null,
+      icon: null,
+      projectEditOptions: defProjEditOptions,
+    };
+
+    return projOptions;
+
+  }
+
+  private createEmptyProjectObject() {
+    let emptyProject : IProject =   {
+      titleProject : null,
+
+      //Reporting columns
+      category1 : null,
+      category2 : null,
+      projectID1 : this.buildSmartText(null, null),
+      projectID2 : this.buildSmartText(null, null),
+      comments: this.buildSmartText(null, null),
+
+      story : null,
+      chapter : null,
+
+      //Activity Columns
+      projOptions: this.createProjOptionsObject(),
+
+      //People Columns
+      everyone : false,
+      leader : null,
+      leaderId: null,
+      team : null,
+      teamIds: null,
+
+      //Task Columns
+      status : null,
+      dueDate : null,
+      completedDate : null,
+      completedBy : null,
+      completedById: null,
+      
+      //Advanced Columns
+      ccEmail : null,
+      ccList : null,
+      sortOrder : null,
+
+      timeTarget: this.createProjectTimeTracking(null),
+    };
+
+    return emptyProject;
+
+  }
+
+
   private createprojectInfo() {
 
     let projectInfo = {} as IProjectInfo;
@@ -394,6 +542,7 @@ export default class TrackMyTime7 extends React.Component<ITrackMyTime7Props, IT
  *                                                                                                       
  */
 
+
   public constructor(props:ITrackMyTime7Props){
     super(props);
     let projWeb = this.cleanURL(this.props.projectListWeb ? this.props.projectListWeb : props.pageContext.web.absoluteUrl);
@@ -435,13 +584,30 @@ export default class TrackMyTime7 extends React.Component<ITrackMyTime7Props, IT
       selectedUser: curUser,
 
       fields: buildFormFields(this.props, this.state),
+      projectFields: buildProjectFormFields(this.props,this.state),
 
       pivtTitles:['Yours', 'Your Team','Everyone','Others'],
       filteredCategory: this.props.defaultProjectPicker,
       pivotDefSelKey:"",
       onlyActiveProjects: this.props.onlyActiveProjects,
       projectType: this.props.projectType,
+
       syncProjectPivotsOnToggle: this.props.syncProjectPivotsOnToggle, //always keep pivots in sync when toggling projects/history
+
+      projColumns : {
+        statusChoices: [],
+        activityTMTChoices: [],
+        category1Choices: [],
+        category2Choices: [], 
+
+        statusDefault: '',
+        activityTMTDefault: '',
+        category1Default: '',
+        category2Default: '',
+
+        optionsTMTCalc: '',
+        activtyURLCalc: '',
+      },
 
       projActivityRule: this.createActURLRules(this.props.projActivityRule),
 
@@ -476,6 +642,9 @@ export default class TrackMyTime7 extends React.Component<ITrackMyTime7Props, IT
 
       //selectedProjectIndex: null,  Adding these 2 sets the default as the first project ever time, then the number of the selection stays between pivots.
       //lastSelectedProjectIndex: null,
+
+      showProjectScreen: ProjectMode.False,
+
       loadOrder: "",
       projectsLoadStatus:"Loading",
       projectsLoadError: "",
@@ -487,6 +656,7 @@ export default class TrackMyTime7 extends React.Component<ITrackMyTime7Props, IT
       timeTrackerListError: false,
       timeTrackerItemsError: false,
 
+      selectedProject: null,
       userLoadStatus:"Loading",
       errTitle: this.errTitles(),
       showTips: false,
@@ -530,7 +700,14 @@ export default class TrackMyTime7 extends React.Component<ITrackMyTime7Props, IT
     this._updateChartFilter = this._updateChartFilter.bind(this);
 
     this._onActivityClick = this._onActivityClick.bind(this);
-       
+
+    this._newProject = this._newProject.bind(this);
+    this._editProject = this._editProject.bind(this);
+    this._copyProject = this._copyProject.bind(this);
+    this._parkProject = this._parkProject.bind(this);
+    this._rejectProject = this._rejectProject.bind(this);
+    this._closeProject = this._closeProject.bind(this);   
+    this._closeProjectEdit = this._closeProjectEdit.bind(this);   
   }
 
 
@@ -665,422 +842,567 @@ export default class TrackMyTime7 extends React.Component<ITrackMyTime7Props, IT
 
   public render(): React.ReactElement<ITrackMyTime7Props> {
 
-    const isSinceEntry = this.state.currentTimePicker === 'sinceLast' ? true : false;   
-    const isSliderEntry = this.state.currentTimePicker === 'slider' ? true : false;
-    const isManualEntry = this.state.currentTimePicker === 'manual' ? true : false;
+    const showProjectScreen = this.state.showProjectScreen ;
 
-    let setPivot = !this.state.projectType ? this.state.projectMasterPriorityChoice :this.state.projectUserPriorityChoice ;
-    //console.log('render setPivot:', setPivot);
-    //console.log('Public render props:', this.props);
-    console.log('TRACK MY TIME STATE:', this.state);
+/***
+ *              d88888b d8888b. d888888b d888888b      d8888b. d8888b.  .d88b.     d88b d88888b  .o88b. d888888b 
+ *              88'     88  `8D   `88'   `~~88~~'      88  `8D 88  `8D .8P  Y8.    `8P' 88'     d8P  Y8 `~~88~~' 
+ *              88ooooo 88   88    88       88         88oodD' 88oobY' 88    88     88  88ooooo 8P         88    
+ *              88~~~~~ 88   88    88       88         88~~~   88`8b   88    88     88  88~~~~~ 8b         88    
+ *              88.     88  .8D   .88.      88         88      88 `88. `8b  d8' db. 88  88.     Y8b  d8    88    
+ *              Y88888P Y8888D' Y888888P    YP         88      88   YD  `Y88P'  Y8888P  Y88888P  `Y88P'    YP    
+ *                                                                                                               
+ *                                                                                                               
+ */
 
-    /**
-     * this section was added to keep pivots in sync when syncProjectPivotsOnToggle === true
-     */
-    let display1 = this.state.projectType === true ? "block" :"none";
-    let display2 = this.state.projectType === true ? "none" :"block";
-    let choice1 = this.state.projectMasterPriorityChoice;
-    let choice2 = this.state.projectUserPriorityChoice;
+    if (showProjectScreen !== ProjectMode.False ) {
 
-    if (this.state.syncProjectPivotsOnToggle){
-      display1 = "block";
-      display2 = "none";
-      choice1 = this.state.projectMasterPriorityChoice;
-      choice2 = this.state.projectMasterPriorityChoice;
-    }
-
-    const stackButtonTokensBody: IStackTokens = { childrenGap: 40 };
-    const stackButtonTokens: IStackTokens = { childrenGap: 40 };
-    const stackFormRowTokens: IStackTokens = { childrenGap: 20 };
-    const stackFormRowsTokens: IStackTokens = { childrenGap: 10 };
-    const stackManualDateTokens: IStackTokens = { childrenGap: 20 };
-    const stackChartTokens: IStackTokens = { childrenGap: 30 };
-
-    let hoursSinceLastTime = 0;
-    if ( this.state.timeTrackerLoadStatus === "Complete" ) {
-      hoursSinceLastTime = getTimeDelta( this.state.lastEndTime.theTime, new Date() , 'hours');
-    }
-
-    let isSaveDisabledTime = false;
-    let isSaveDisabledFields = false;
-    let isSaveButtonDisabled = false;
-    let isEndBeforeStart = false;
-    
-    let deltaTime = this.state.formEntry == null ? null : getTimeDelta(this.state.formEntry.startTime,this.state.formEntry.endTime,'hours');
-    let allowedHours = this.props.timeSliderMax/60;
-
-    if ( this.state.currentTimePicker === 'slider' ) {
-      if ( this.state.timeSliderValue == 0 ) { isSaveDisabledTime = true; isSaveDisabledFields = true; isSaveButtonDisabled = true; }
-      if ( getTimeDelta(this.state.formEntry.endTime, this.state.formEntry.startTime, 'ms') > 0 ) { isEndBeforeStart = true; isSaveButtonDisabled = true; }
-      // Also need to add if the slider would put the start time before the last end time.
-    } else if ( this.state.currentTimePicker === 'sinceLast' ) {
-      if ( hoursSinceLastTime > this.props.timeSliderMax / 60 ) { isSaveDisabledTime = true; isSaveDisabledFields = true; isSaveButtonDisabled = true; }
-
-    } else if ( this.state.currentTimePicker === 'manual' ) {
-      if ( deltaTime < 0 ) { isEndBeforeStart = true; isSaveButtonDisabled = true; }
-    }
-
-    if ( isSaveButtonDisabled === false ) {
-      if ( this.state.fields.ProjectID1.required ) {
-        if ( this.state.formEntry.projectID1.value === "*" || this.state.formEntry.projectID1.value == null  || this.state.formEntry.projectID1.value.replace(' ','') == '' ) {
-          isSaveButtonDisabled = true;
-        }
+      let selectedProject: IProject = null;
+      
+      if ( showProjectScreen === ProjectMode.New ) { selectedProject = this.createEmptyProjectObject(); }
+      else if ( showProjectScreen === ProjectMode.Copy ) {
+        selectedProject = JSON.parse(JSON.stringify(this.state.selectedProject));
+        selectedProject.titleProject = "Copy of " + selectedProject.titleProject;
+        selectedProject.projOptions.activity = this.state.selectedProject.projOptions.activity == '' ? 
+              "" : "Copy of " + this.state.selectedProject.projOptions.activity;
+        selectedProject.status = defStatus;
+        selectedProject.dueDate = null;
+        selectedProject.completedDate = null;
+        selectedProject.completedBy = null;
+        selectedProject.projOptions.projectEditOptions = allProjEditOptions;
+      
+      } else {
+        selectedProject = JSON.parse(JSON.stringify(this.state.selectedProject));        
       }
-      if ( this.state.fields.ProjectID2.required ) {
-        if ( this.state.formEntry.projectID2.value === "*" || this.state.formEntry.projectID2.value == null  || this.state.formEntry.projectID1.value.replace(' ','') == ''  ) {
-          isSaveButtonDisabled = true;
-        }
-      }
-      if ( this.state.fields.Category1.required ) {
-        if ( this.state.formEntry.category1 === ["*"] || this.state.formEntry.category1 == null  || this.state.formEntry.category1[0].replace(' ','') == ''  ) {
-          isSaveButtonDisabled = true;
-        }
-      }
-      if ( this.state.fields.Category2.required ) {
-        if ( this.state.formEntry.category2=== ["*"] || this.state.formEntry.projectID2 == null  || this.state.formEntry.category2[0].replace(' ','') == ''  ) {
-          isSaveButtonDisabled = true;
-        }
-      }
-    }
+
+      let projectPage = <MyProjectPage 
+
+        projColumns={ this.state.projColumns }
+        wpContext= {this.props.wpContext}
+        showProjectScreen={ this.state.showProjectScreen }
+        selectedProject={ selectedProject }
+        _closeProjectEdit={ this._closeProjectEdit.bind(this)}
+        projectFields={this.state.projectFields}
+        
+        // 2 - Source and destination list information
+        projectListTitle= { this.props.projectListTitle}
+        projectListWeb= { this.props.projectListWeb}
+
+      ></MyProjectPage>;
+
+      return (
+        <div className={ styles.trackMyTime7 }>
+          { projectPage }
+        </div>);
 
 
-    let entryOptions = choiceBuilders.creatEntryTypeChoices(this.state.currentTimePicker, this._updateEntryType.bind(this));
-    let theTime;
+      /***
+ *              d88888b d8888b. d888888b d888888b      d888888b d888888b .88b  d88. d88888b      d88888b d8b   db d888888b d8888b. db    db 
+ *              88'     88  `8D   `88'   `~~88~~'      `~~88~~'   `88'   88'YbdP`88 88'          88'     888o  88 `~~88~~' 88  `8D `8b  d8' 
+ *              88ooooo 88   88    88       88            88       88    88  88  88 88ooooo      88ooooo 88V8o 88    88    88oobY'  `8bd8'  
+ *              88~~~~~ 88   88    88       88            88       88    88  88  88 88~~~~~      88~~~~~ 88 V8o88    88    88`8b      88    
+ *              88.     88  .8D   .88.      88            88      .88.   88  88  88 88.          88.     88  V888    88    88 `88.    88    
+ *              Y88888P Y8888D' Y888888P    YP            YP    Y888888P YP  YP  YP Y88888P      Y88888P VP   V8P    YP    88   YD    YP    
+ *                                                                                                                                          
+ *                                                                                                                                          
+ */
 
-    //How to set personal time settings
-    //https://sharepointmaven.com/sharepoint-time-zone/
+    } else {
 
-    if (this.state.timeTrackerLoadStatus === "Complete") {
-      if (this.state.currentTimePicker === 'sinceLast') {
 
-        theTime = <div className={( isSaveDisabledTime ? styles.timeError : styles.timeInPast )}>
-          From: { getDayTimeToMinutes(this.state.lastEndTime.theTime) } until NOW<br/>
-          {( isSaveDisabledTime ? <div>Is to far in the past.</div> : "" )}
-          {( isSaveDisabledTime ? <div>Use Slider or Manual Mode to save time.</div> : "" )}
-          </div>; 
 
-      } else if  (this.state.currentTimePicker === 'slider' ) {
-        if ( isEndBeforeStart ) {
-          theTime = <div className={( styles.timeError )}>
-            Adjust the slider before saving.
-          </div>;
-        } else if (this.state.timeSliderValue > 0 ) {
-            //The START time IS NOW and the end time is in the future (based on slider)
-            theTime = <div className={ styles.timeInFuture }>From NOW until: { getDayTimeToMinutes(this.state.formEntry.endTime) }</div>;
-        } else if ( this.state.timeSliderValue < 0 )  {
-          //The END time IS NOW and the end time is in the past (based on slider)
-          theTime = <div className={ styles.timeInPast }>From { getDayTimeToMinutes(this.state.formEntry.startTime) } until NOW</div>;
-        } else { // Value can not be zero or the save button should not be visible.
-          theTime = <div className={ styles.timeError }>Adjust the slider before saving</div>;
-        }
 
-      } else if ( this.state.currentTimePicker === 'start' ) {
-        theTime = <div>Creates zero minutes entry to start your day</div>;
-
-      } else if ( this.state.currentTimePicker === 'manual' ) {
-
-        if ( deltaTime != null ) {
-          if ( deltaTime < 0 ) {
-            theTime = <div className={( styles.timeError )}>
-              End Time is BEFORE Start Time, please fix before saving.
-              </div>; 
+      const isSinceEntry = this.state.currentTimePicker === 'sinceLast' ? true : false;   
+      const isSliderEntry = this.state.currentTimePicker === 'slider' ? true : false;
+      const isManualEntry = this.state.currentTimePicker === 'manual' ? true : false;
   
-          } else if (deltaTime > allowedHours ) {
-            theTime = <div className={( styles.timeError )}>
-              Exceeded max allowed timespan of { allowedHours } hours.
-              </div>; 
+      let setPivot = !this.state.projectType ? this.state.projectMasterPriorityChoice :this.state.projectUserPriorityChoice ;
+      //console.log('render setPivot:', setPivot);
+      //console.log('Public render props:', this.props);
+      console.log('TRACK MY TIME STATE:', this.state);
+  
+      /**
+       * this section was added to keep pivots in sync when syncProjectPivotsOnToggle === true
+       */
+      let display1 = this.state.projectType === true ? "block" :"none";
+      let display2 = this.state.projectType === true ? "none" :"block";
+      let choice1 = this.state.projectMasterPriorityChoice;
+      let choice2 = this.state.projectUserPriorityChoice;
+  
+      if (this.state.syncProjectPivotsOnToggle){
+        display1 = "block";
+        display2 = "none";
+        choice1 = this.state.projectMasterPriorityChoice;
+        choice2 = this.state.projectMasterPriorityChoice;
+      }
+  
+      const stackButtonTokensBody: IStackTokens = { childrenGap: 40 };
+      const stackButtonTokens: IStackTokens = { childrenGap: 40 };
+      const stackFormRowTokens: IStackTokens = { childrenGap: 20 };
+      const stackFormRowsTokens: IStackTokens = { childrenGap: 10 };
+      const stackManualDateTokens: IStackTokens = { childrenGap: 20 };
+      const stackChartTokens: IStackTokens = { childrenGap: 30 };
+  
+      let hoursSinceLastTime = 0;
+      if ( this.state.timeTrackerLoadStatus === "Complete" ) {
+        hoursSinceLastTime = getTimeDelta( this.state.lastEndTime.theTime, new Date() , 'hours');
+      }
+  
+      let isSaveDisabledTime = false;
+      let isSaveDisabledFields = false;
+      let isSaveButtonDisabled = false;
+      let isEndBeforeStart = false;
+      
+      let deltaTime = this.state.formEntry == null ? null : getTimeDelta(this.state.formEntry.startTime,this.state.formEntry.endTime,'hours');
+      let allowedHours = this.props.timeSliderMax/60;
+  
+      if ( this.state.currentTimePicker === 'slider' ) {
+        if ( this.state.timeSliderValue == 0 ) { isSaveDisabledTime = true; isSaveDisabledFields = true; isSaveButtonDisabled = true; }
+        if ( getTimeDelta(this.state.formEntry.endTime, this.state.formEntry.startTime, 'ms') > 0 ) { isEndBeforeStart = true; isSaveButtonDisabled = true; }
+        // Also need to add if the slider would put the start time before the last end time.
+      } else if ( this.state.currentTimePicker === 'sinceLast' ) {
+        if ( hoursSinceLastTime > this.props.timeSliderMax / 60 ) { isSaveDisabledTime = true; isSaveDisabledFields = true; isSaveButtonDisabled = true; }
+  
+      } else if ( this.state.currentTimePicker === 'manual' ) {
+        if ( deltaTime < 0 ) { isEndBeforeStart = true; isSaveButtonDisabled = true; }
+      }
+  
+      if ( isSaveButtonDisabled === false ) {
+        if ( this.state.fields.ProjectID1.required ) {
+          if ( this.state.formEntry.projectID1.value === "*" || this.state.formEntry.projectID1.value == null  || this.state.formEntry.projectID1.value.replace(' ','') == '' ) {
+            isSaveButtonDisabled = true;
+          }
+        }
+        if ( this.state.fields.ProjectID2.required ) {
+          if ( this.state.formEntry.projectID2.value === "*" || this.state.formEntry.projectID2.value == null  || this.state.formEntry.projectID1.value.replace(' ','') == ''  ) {
+            isSaveButtonDisabled = true;
+          }
+        }
+        if ( this.state.fields.Category1.required ) {
+          if ( this.state.formEntry.category1 === ["*"] || this.state.formEntry.category1 == null  || this.state.formEntry.category1[0].replace(' ','') == ''  ) {
+            isSaveButtonDisabled = true;
+          }
+        }
+        if ( this.state.fields.Category2.required ) {
+          if ( this.state.formEntry.category2=== ["*"] || this.state.formEntry.projectID2 == null  || this.state.formEntry.category2[0].replace(' ','') == ''  ) {
+            isSaveButtonDisabled = true;
           }
         }
       }
-
-    } else { theTime = ""; }
-
-    const projectsWebError = this.props.projectListWeb.indexOf(this.props.tenant) > -1 ? '' :
-    <div>
-        <p>Your Project List is not in this Tenanat...</p>
-        <ul>
-          <li>{ this.props.projectListWeb } &lt;&lt;== Project Web</li>
-          <li>{ this.props.tenant } &lt;&lt;== Should have this in it</li>
-        </ul>
-
-    </div>;
-
-    const timeWebError = this.props.timeTrackListWeb.indexOf(this.props.tenant) > -1 ? '' :
-    <div>
-        <p>Your TimeTrack List is not in this Tenanat...</p>
-        <ul>
-          <li>{ this.props.timeTrackListWeb } &lt;&lt;== TrackTime List Web</li>
-          <li>{ this.props.tenant } &lt;&lt;== Should have this in it</li>
-        </ul>
-    </div>;
-
-    const projectsListError = this.state.projects.master.length !== 0 ? '' :
+  
+  
+      let entryOptions = choiceBuilders.creatEntryTypeChoices(this.state.currentTimePicker, this._updateEntryType.bind(this));
+      let theTime;
+  
+      //How to set personal time settings
+      //https://sharepointmaven.com/sharepoint-time-zone/
+  
+      if (this.state.timeTrackerLoadStatus === "Complete") {
+        if (this.state.currentTimePicker === 'sinceLast') {
+  
+          theTime = <div className={( isSaveDisabledTime ? styles.timeError : styles.timeInPast )}>
+            From: { getDayTimeToMinutes(this.state.lastEndTime.theTime) } until NOW<br/>
+            {( isSaveDisabledTime ? <div>Is to far in the past.</div> : "" )}
+            {( isSaveDisabledTime ? <div>Use Slider or Manual Mode to save time.</div> : "" )}
+            </div>; 
+  
+        } else if  (this.state.currentTimePicker === 'slider' ) {
+          if ( isEndBeforeStart ) {
+            theTime = <div className={( styles.timeError )}>
+              Adjust the slider before saving.
+            </div>;
+          } else if (this.state.timeSliderValue > 0 ) {
+              //The START time IS NOW and the end time is in the future (based on slider)
+              theTime = <div className={ styles.timeInFuture }>From NOW until: { getDayTimeToMinutes(this.state.formEntry.endTime) }</div>;
+          } else if ( this.state.timeSliderValue < 0 )  {
+            //The END time IS NOW and the end time is in the past (based on slider)
+            theTime = <div className={ styles.timeInPast }>From { getDayTimeToMinutes(this.state.formEntry.startTime) } until NOW</div>;
+          } else { // Value can not be zero or the save button should not be visible.
+            theTime = <div className={ styles.timeError }>Adjust the slider before saving</div>;
+          }
+  
+        } else if ( this.state.currentTimePicker === 'start' ) {
+          theTime = <div>Creates zero minutes entry to start your day</div>;
+  
+        } else if ( this.state.currentTimePicker === 'manual' ) {
+  
+          if ( deltaTime != null ) {
+            if ( deltaTime < 0 ) {
+              theTime = <div className={( styles.timeError )}>
+                End Time is BEFORE Start Time, please fix before saving.
+                </div>; 
+    
+            } else if (deltaTime > allowedHours ) {
+              theTime = <div className={( styles.timeError )}>
+                Exceeded max allowed timespan of { allowedHours } hours.
+                </div>; 
+            }
+          }
+        }
+  
+      } else { theTime = ""; }
+  
+      const projectsWebError = this.props.projectListWeb.indexOf(this.props.tenant) > -1 ? '' :
+      <div>
+          <p>Your Project List is not in this Tenanat...</p>
+          <ul>
+            <li>{ this.props.projectListWeb } &lt;&lt;== Project Web</li>
+            <li>{ this.props.tenant } &lt;&lt;== Should have this in it</li>
+          </ul>
+      </div>;
+  
+      const timeWebError = this.props.timeTrackListWeb.indexOf(this.props.tenant) > -1 ? '' :
+      <div>
+          <p>Your TimeTrack List is not in this Tenanat...</p>
+          <ul>
+            <li>{ this.props.timeTrackListWeb } &lt;&lt;== TrackTime List Web</li>
+            <li>{ this.props.tenant } &lt;&lt;== Should have this in it</li>
+          </ul>
+      </div>;
+  
+      const projectsListError = this.state.projects.master.length !== 0 ? '' :
+        <div>
+          <ul>
+            <li>Is this the right Projects List URL? <b>{ this.props.projectListWeb }</b></li>
+            <li>Is this the right Projects List Title? <b>{ this.props.projectListTitle }</b></li>
+            <li>
+              <a href={this.state.projectListURL} target='_blank'>
+                <span>Check your Project list here</span>
+              </a>
+            </li>
+          </ul>
+        </div>;
+  
+      const timeListError = this.state.projects.user.length !== 0 ? '' :
       <div>
         <ul>
-          <li>Is this the right Projects List URL? <b>{ this.props.projectListWeb }</b></li>
-          <li>Is this the right Projects List Title? <b>{ this.props.projectListTitle }</b></li>
+          <li>Is this the right TrackYourTime List URL? <b>{ this.props.timeTrackListWeb }</b></li>
+          <li>Is this the right TrackYourTime List Title? <b>{ this.props.timeTrackListTitle }</b></li>
           <li>
-            <a href={this.state.projectListURL} target='_blank'>
-              <span>Check your Project list here</span>
+            <a href={this.state.timeTrackerListURL} target='_blank'>
+              <span>Check your TrackTime list here</span>
             </a>
           </li>
         </ul>
       </div>;
-
-    const timeListError = this.state.projects.user.length !== 0 ? '' :
-    <div>
-      <ul>
-        <li>Is this the right TrackYourTime List URL? <b>{ this.props.timeTrackListWeb }</b></li>
-        <li>Is this the right TrackYourTime List Title? <b>{ this.props.timeTrackListTitle }</b></li>
-        <li>
-          <a href={this.state.timeTrackerListURL} target='_blank'>
-            <span>Check your TrackTime list here</span>
-          </a>
-        </li>
-      </ul>
-    </div>;
-
-    const listError = this.state.listError === false ? '' :
+  
+      const listError = this.state.listError === false ? '' :
+        <div style={{ paddingTop: '0px' }}>
+          <h2>{ this.state.errTitle }</h2>
+          <h3>Here are the error(s) we received</h3>
+          <p><mark>{ this.state.loadError }</mark></p>
+          <h3>Here are some suggestions</h3>
+            {projectsWebError} 
+            {projectsListError}
+            {timeWebError}
+            {timeListError}
+  
+        </div>;
+      
+  
+      const noProjectsFound = this.state.projectType !== false && this.state.projectsLoadStatus === 'Complete' ? '' :
       <div style={{ paddingTop: '0px' }}>
-        <h2>{ this.state.errTitle }</h2>
-        <h3>Here are the error(s) we received</h3>
-        <p><mark>{ this.state.loadError }</mark></p>
-        <h3>Here are some suggestions</h3>
-          {projectsWebError} 
-          {projectsListError}
-          {timeWebError}
-          {timeListError}
-
-      </div>;
-    
-
-    const noProjectsFound = this.state.projectType !== false && this.state.projectsLoadStatus === 'Complete' ? '' :
-    <div style={{ paddingTop: '0px' }}>
-      <h2>No Projects found in "{this.state.filteredCategory}" :(</h2>
-      <h3>Get started by checking for other projects</h3>
-      <ul>
-      <li>Click on the other Project Categories like</li>
+        <h2>No Projects found in "{this.state.filteredCategory}" :(</h2>
+        <h3>Get started by checking for other projects</h3>
+        <ul>
+        <li>Click on the other Project Categories like</li>
+          <ol>
+            <li>{this.state.pivots.projects[0].headerText}</li>
+            <li>{this.state.pivots.projects[1].headerText}</li>
+            <li>{this.state.pivots.projects[2].headerText}</li>
+            <li>{this.state.pivots.projects[3].headerText}</li>
+          </ol>
+        </ul>
+        <h3>Can't find any? Create a new one!</h3>
         <ol>
-          <li>{this.state.pivots.projects[0].headerText}</li>
-          <li>{this.state.pivots.projects[1].headerText}</li>
-          <li>{this.state.pivots.projects[2].headerText}</li>
-          <li>{this.state.pivots.projects[3].headerText}</li>
+          <li>
+            <a href={this.state.projectListURL} >
+              <span>Go to your list: { this.props.projectListTitle }</span>
+            </a>
+          </li>
+          <li>Create some new projects</li>
+          <li>Make yourself the Leader for easy access</li>
+          <li>Mark generic ones 'Everyone' so they are easy to find</li>
         </ol>
-      </ul>
-      <h3>Can't find any? Create a new one!</h3>
-      <ol>
-        <li>
-          <a href={this.state.projectListURL} >
-            <span>Go to your list: { this.props.projectListTitle }</span>
-          </a>
-        </li>
-        <li>Create some new projects</li>
-        <li>Make yourself the Leader for easy access</li>
-        <li>Mark generic ones 'Everyone' so they are easy to find</li>
-      </ol>
-    </div>;
-
-
-    const buttons: ISingleButtonProps[] =
-      [/*
-        {
-        disabled: isSaveDisabled,  
-        checked: true, 
-        primary: true,
-        label: "Start Time",
-        secondary: "Create start ime",
-        buttonOnClick: this.startMyTime.bind(this),
-      },*/
-{
-        disabled: false,  
-        checked: true, 
-        primary: false,
-        label: "Clear item",
-        secondary: "Press to clear form",
-        buttonOnClick: this.clearMyInput.bind(this),
-      },      {
-        disabled: isSaveButtonDisabled,  
-        checked: true, 
-        primary: true,
-        label: "Save item",
-        secondary: "Press to Create entry",
-        buttonOnClick: this.trackMyTime.bind(this),
-      },
-
-      ];
-
-    let saveButtons = 
-    <div style={{ paddingTop: '20px' }}>
-      <ButtonCompound
-        buttons={buttons} horizontal={true}
-      />
-    </div>;
-     
-    let timeSlider = isSliderEntry ? sliderBuilders.createSlider(this.props,this.state, this._updateTimeSlider.bind(this)) : '';
-    let comments = formBuilders.createThisField(this.props,this.state, this.state.fields.Comments, isSaveDisabledFields, this._updateComments.bind(this));
-    let projectTitle = formBuilders.createThisField(this.props,this.state,this.state.fields.Title, isSaveDisabledFields,  this._updateProjectTitle.bind(this));
-    let projectID1 = formBuilders.createThisField(this.props,this.state, this.state.fields.ProjectID1, isSaveDisabledFields,  this._updateProjectID1.bind(this));
-    let projectID2 = formBuilders.createThisField(this.props,this.state, this.state.fields.ProjectID2, isSaveDisabledFields,  this._updateProjectID2.bind(this));
-
-    let showActivity = true;
-    if (this.state.selectedProjectIndex != null) {
-      if (this.state.projects.newFiltered.length > 0){
-        if (this.state.projects.newFiltered[this.state.selectedProjectIndex]){
-          if (this.state.projects.newFiltered[this.state.selectedProjectIndex].projOptions) {
-            if (this.state.projects.newFiltered[this.state.selectedProjectIndex].projOptions.showLink) {
-              showActivity = false;
+      </div>;
+  
+  
+      const buttons: ISingleButtonProps[] =
+        [/*
+          {
+          disabled: isSaveDisabled,  
+          checked: true, 
+          primary: true,
+          label: "Start Time",
+          secondary: "Create start ime",
+          buttonOnClick: this.startMyTime.bind(this),
+        },*/
+  {
+          disabled: false,  
+          checked: true, 
+          primary: false,
+          label: "Clear item",
+          secondary: "Press to clear form",
+          buttonOnClick: this.clearMyInput.bind(this),
+        },      {
+          disabled: isSaveButtonDisabled,  
+          checked: true, 
+          primary: true,
+          label: "Save item",
+          secondary: "Press to Create entry",
+          buttonOnClick: this.trackMyTime.bind(this),
+        },
+  
+        ];
+  
+      let saveButtons = 
+      <div style={{ paddingTop: '20px' }}>
+        <ButtonCompound
+          buttons={buttons} horizontal={true}
+        />
+      </div>;
+       
+      let timeSlider = isSliderEntry ? sliderBuilders.createSlider(this.props,this.state, this._updateTimeSlider.bind(this)) : '';
+      let comments = formBuilders.createThisField(this.props,this.state, this.state.fields.Comments, isSaveDisabledFields, this._updateComments.bind(this));
+      let projectTitle = formBuilders.createThisField(this.props,this.state,this.state.fields.Title, isSaveDisabledFields,  this._updateProjectTitle.bind(this));
+      let projectID1 = formBuilders.createThisField(this.props,this.state, this.state.fields.ProjectID1, isSaveDisabledFields,  this._updateProjectID1.bind(this));
+      let projectID2 = formBuilders.createThisField(this.props,this.state, this.state.fields.ProjectID2, isSaveDisabledFields,  this._updateProjectID2.bind(this));
+  
+      let showActivity = true;
+      if (this.state.selectedProjectIndex != null) {
+        if (this.state.projects.newFiltered.length > 0){
+          if (this.state.projects.newFiltered[this.state.selectedProjectIndex]){
+            if (this.state.projects.newFiltered[this.state.selectedProjectIndex].projOptions) {
+              if (this.state.projects.newFiltered[this.state.selectedProjectIndex].projOptions.showLink) {
+                showActivity = false;
+              }
             }
           }
         }
       }
-    }
-
-    let activity =  !showActivity ? null : formBuilders.createThisField(this.props,this.state, this.state.fields.Activity, isSaveDisabledFields,  this._updateActivity.bind(this));
-
-    //let activity = ( this.state.projects.newFiltered[this.state.selectedProjectIndex].projActivity.showLink === true ) ? null :
-      //formBuilders.createThisField(this.props,this.state, this.state.fields.Activity, isSaveDisabledFields,  this._updateActivity.bind(this));
-
-
-    let startDate = isManualEntry ? dateBuilders.creatDateTimeControled(this.props,this.state,this.state.fields.Start, false, this._updateStart.bind(this)) : '';
-    let endDate = isManualEntry ? dateBuilders.creatDateTimeControled(this.props,this.state,this.state.fields.End, false, this._updateEnd.bind(this)) : '';
-
-    //let entryType = formBuilders.createThisField(this.props,this.state, this.state.fields., this._updateEntryType.bind(this));
-    
-    let listProjects = null;
-    if (this.state.listError) { listProjects = listError; }
-    else if ( this.state.projectsLoadStatus === 'Complete' && this.state.projects.newFiltered.length===0 ) {
-      listProjects =  noProjectsFound;
-    } else {
-      listProjects = listBuilders.projectBuilder(this.props,this.state,this.state.projects.newFiltered, this._getSelectedProject.bind(this));
-    }
-
-    let listBuild = listBuilders.listViewBuilder(this.props,this.state,this.state.entries.newFiltered);
-
-    let userName = this.state.currentUser
-      ? getNicks(this.state.currentUser) + " ( Id: " + this.state.currentUser.Id + " ) entry count: " + this.state.allEntries.length
-      : "";
-
-
-    const infoPage = <div>
-      <InfoPage 
+  
+      let activity =  !showActivity ? null : formBuilders.createThisField(this.props,this.state, this.state.fields.Activity, isSaveDisabledFields,  this._updateActivity.bind(this));
+  
+      //let activity = ( this.state.projects.newFiltered[this.state.selectedProjectIndex].projActivity.showLink === true ) ? null :
+        //formBuilders.createThisField(this.props,this.state, this.state.fields.Activity, isSaveDisabledFields,  this._updateActivity.bind(this));
+  
+  
+      let startDate = isManualEntry ? dateBuilders.creatDateTimeControled(this.props,this.state,this.state.fields.Start, false, this._updateStart.bind(this)) : '';
+      let endDate = isManualEntry ? dateBuilders.creatDateTimeControled(this.props,this.state,this.state.fields.End, false, this._updateEnd.bind(this)) : '';
+  
+      //let entryType = formBuilders.createThisField(this.props,this.state, this.state.fields., this._updateEntryType.bind(this));
+      
+      let listProjects = null;
+      if (this.state.listError) { listProjects = listError; }
+      else if ( this.state.projectsLoadStatus === 'Complete' && this.state.projects.newFiltered.length===0 ) {
+        listProjects =  noProjectsFound;
+      } else {
+        listProjects = listBuilders.projectBuilder(this.props,this.state,this.state.projects.newFiltered, this._getSelectedProject.bind(this));
+      }
+  
+      let listBuild = listBuilders.listViewBuilder(this.props,this.state,this.state.entries.newFiltered);
+  
+      let userName = this.state.currentUser
+        ? getNicks(this.state.currentUser) + " ( Id: " + this.state.currentUser.Id + " ) entry count: " + this.state.allEntries.length
+        : "";
+  
+      const infoPage = <div>
+        <InfoPage 
+            allLoaded={ this.state.allLoaded }
+            showInfo={ this.state.showTips }
+            parentProps= { this.props }
+            parentState= { this.state }
+            toggleDebug = { this.toggleDebug.bind(this) }
+        ></InfoPage>
+      </div>;
+  
+      let loadCharts = this.state.allLoaded && this.state.showCharts ? true : false;
+      const chartPage = !loadCharts ? null : <div>
+        <ChartsPage 
           allLoaded={ this.state.allLoaded }
-          showInfo={ this.state.showTips }
+          showCharts={ this.state.showCharts }
+          entries= { this.state.entries }
+          defaultStory="None"
+          today={ this.props.today }
+          selectedStory = { this.state.selectedStory }
+          selectedUser = { this.state.selectedUser }
+          chartStringFilter = { this.state.chartStringFilter }
+          _updateStory={ this._updateStory.bind(this) }
+          _updateUserFilter={ this._updateUserFilter.bind(this) }
+          _updateChartFilter={ this._updateChartFilter.bind(this) }
+          WebpartHeight={ this.state.WebpartHeight }
+          WebpartWidth={ this.state.WebpartWidth }
+          parentState= { this.state }
+        ></ChartsPage>
+      </div>;
+  
+      let toggleChartsButton = createIconButton('BarChartVerticalFill','Toggle Charts',this.toggleCharts.bind(this), null, null );
+      let toggleTipsButton = createIconButton('Help','Toggle Tips',this.toggleTips.bind(this), null, null );
+  
+      let centerPane = <CenterPane 
+          allLoaded={ true } 
+          projectIndex={ this.state.selectedProjectIndex }
+          showCenter={ true }
           parentProps= { this.props }
           parentState= { this.state }
-          toggleDebug = { this.toggleDebug.bind(this) }
-      ></InfoPage>
-    </div>;
+          _onActivityClick={ this._onActivityClick.bind(this) }
+      ></CenterPane>;
+  
+      const projCommands = <div>
+        <MyCommandBar 
+          hasProject={ this.state.selectedProject === null ? false : true }
+          newProject={ this._newProject.bind(this) }
+          editProject={ this._editProject.bind(this) }
+          copyProject={ this._copyProject.bind(this) }
+          parkProject={ this._parkProject.bind(this) }
+          rejectProject={ this._rejectProject.bind(this) }
+          closeProject={ this._closeProject.bind(this) }
+        ></MyCommandBar>
+      </div>;
 
-    let loadCharts = this.state.allLoaded && this.state.showCharts ? true : false;
-    const chartPage = !loadCharts ? null : <div>
-      <ChartsPage 
-        allLoaded={ this.state.allLoaded }
-        showCharts={ this.state.showCharts }
-        entries= { this.state.entries }
-        defaultStory="None"
-        today={ this.props.today }
-        selectedStory = { this.state.selectedStory }
-        selectedUser = { this.state.selectedUser }
-        chartStringFilter = { this.state.chartStringFilter }
-        _updateStory={ this._updateStory.bind(this) }
-        _updateUserFilter={ this._updateUserFilter.bind(this) }
-        _updateChartFilter={ this._updateChartFilter.bind(this) }
-        WebpartHeight={ this.state.WebpartHeight }
-        WebpartWidth={ this.state.WebpartWidth }
-        parentState= { this.state }
-      ></ChartsPage>
-    </div>;
+      const newProjCommands = null;
 
-    let toggleChartsButton = createIconButton('BarChartVerticalFill','Toggle Charts',this.toggleCharts.bind(this), null, null );
-    let toggleTipsButton = createIconButton('Help','Toggle Tips',this.toggleTips.bind(this), null, null );
+  /***
+   *                   d8888b. d88888b d888888b db    db d8888b. d8b   db 
+   *                   88  `8D 88'     `~~88~~' 88    88 88  `8D 888o  88 
+   *                   88oobY' 88ooooo    88    88    88 88oobY' 88V8o 88 
+   *                   88`8b   88~~~~~    88    88    88 88`8b   88 V8o88 
+   *                   88 `88. 88.        88    88b  d88 88 `88. 88  V888 
+   *                   88   YD Y88888P    YP    ~Y8888P' 88   YD VP   V8P 
+   *                                                                      
+   *                                                                      
+   */
+  
+      let greeting = this.state.WebpartWidth < 800 ? null : <div><span style={{fontSize: 20, paddingRight: 30,}}>{ getGreeting(this.state.currentUser)}</span></div>;
+  
+      return (
+        <div className={ styles.trackMyTime7 }>
+          <div className={ styles.container }>
+          <div className={styles.floatLeft}>
+  
+              { this.createPivotObject(choice2, display2)  }
+              { this.createPivotObject(choice1, display1)  }
+  
+              { /*this.createPivotObject(setPivot, "block") */ }
+              { greeting }
+              { this.createProjectTypeToggle(this.state) }
+              { toggleChartsButton }
+              { toggleTipsButton }
+             
+          </div>
+          <div className={( this.state.showTips ? '' : styles.hideMe )}>
+            { infoPage }
+          </div>
+  
+          <div className={( this.state.showCharts ? '' : styles.hideMe )}>
+  
+            { chartPage }
+  
+          </div>
+            <div>
+  
+              <Stack padding={20} horizontal={true} horizontalAlign={"space-between"} tokens={stackButtonTokensBody}> {/* Stack for Projects and body */}
+                { /* this.createProjectChoices(this.state) */ }
+                <Stack horizontal={false} horizontalAlign={"start"} tokens={stackFormRowsTokens}>{/* Stack for Pivot Help and Projects */}
+                  { this.getPivotHelpText(this.state, this.props)}
+                  { this.state.selectedProject === null ? newProjCommands : projCommands }
+                  { listProjects }
+                </Stack>  {/* Stack for Pivot Help and Projects */}
+                { centerPane }
+                <Stack horizontal={false} horizontalAlign={"end"} tokens={stackFormRowsTokens}>{/* Stack for Buttons and Fields */}
+                  { entryOptions }
+                  { (timeSlider) }
+                  <Stack horizontal={true} wrap={true} horizontalAlign={"end"} tokens={stackManualDateTokens}>{/* Stack for Buttons and Fields */}
+                  { startDate }
+                  { endDate }
+                  </Stack>  {/* Stack for Buttons and Fields */}
+                  { theTime }
+                  { projectTitle }
+                  { activity }
+                  { comments }
+                  { /* entryType */ }
+                  <Stack horizontal={true} tokens={stackFormRowTokens}>{ projectID1 }{ projectID2 }</Stack>
+  
+                  { saveButtons }
+  
+                </Stack>  {/* Stack for Buttons and Fields */}
+  
+              </Stack> {/* Stack for Projects and body */}
+            </div>
+  
+            <div></div><div><br/><br/></div>
+            <div style={{ paddingLeft: '20px', paddingRight: '20px' }}>
+              <div><h2>Recent TrackYourTime History { userName }</h2></div>
+              {(listBuild)}
+              { /* this.createHistoryItems(this.state) */ }
+            </div>
+  
+  
+          </div>
+        </div>
+      );
 
-    let centerPane = <CenterPane 
-        allLoaded={ true } 
-        projectIndex={ this.state.selectedProjectIndex }
-        showCenter={ true }
-        parentProps= { this.props }
-        parentState= { this.state }
-        _onActivityClick={ this._onActivityClick.bind(this) }
-    ></CenterPane>;
+
+
+    }
+
+  }
 
 /***
- *                   d8888b. d88888b d888888b db    db d8888b. d8b   db 
- *                   88  `8D 88'     `~~88~~' 88    88 88  `8D 888o  88 
- *                   88oobY' 88ooooo    88    88    88 88oobY' 88V8o 88 
- *                   88`8b   88~~~~~    88    88    88 88`8b   88 V8o88 
- *                   88 `88. 88.        88    88b  d88 88 `88. 88  V888 
- *                   88   YD Y88888P    YP    ~Y8888P' 88   YD VP   V8P 
- *                                                                      
- *                                                                      
+ *    d8888b. d8888b.  .d88b.     d88b       .o88b.  .d88b.  .88b  d88. .88b  d88.  .d8b.  d8b   db d8888b. .d8888. 
+ *    88  `8D 88  `8D .8P  Y8.    `8P'      d8P  Y8 .8P  Y8. 88'YbdP`88 88'YbdP`88 d8' `8b 888o  88 88  `8D 88'  YP 
+ *    88oodD' 88oobY' 88    88     88       8P      88    88 88  88  88 88  88  88 88ooo88 88V8o 88 88   88 `8bo.   
+ *    88~~~   88`8b   88    88     88       8b      88    88 88  88  88 88  88  88 88~~~88 88 V8o88 88   88   `Y8b. 
+ *    88      88 `88. `8b  d8' db. 88       Y8b  d8 `8b  d8' 88  88  88 88  88  88 88   88 88  V888 88  .8D db   8D 
+ *    88      88   YD  `Y88P'  Y8888P        `Y88P'  `Y88P'  YP  YP  YP YP  YP  YP YP   YP VP   V8P Y8888D' `8888Y' 
+ *                                                                                                                  
+ *                                                                                                                  
  */
 
-    let greeting = this.state.WebpartWidth < 800 ? null : <div><span style={{fontSize: 20, paddingRight: 30,}}>{ getGreeting(this.state.currentUser)}</span></div>;
+  private _newProject(){
+    console.log('Clicked _newProject!');
+    this.setState({ 
+      showProjectScreen: ProjectMode.New,
+     });
+  }
+  private _editProject(){
+    console.log('Clicked _editProject!');
+    this.setState({ 
+      showProjectScreen: ProjectMode.Edit,
+     });
+  }
+  private _copyProject(){
+    console.log('Clicked _copyProject!');
+    this.setState({ 
+      showProjectScreen: ProjectMode.Copy ,
+     });
+  }
 
-    return (
-      <div className={ styles.trackMyTime7 }>
-        <div className={ styles.container }>
-        <div className={styles.floatLeft}>
-
-            { this.createPivotObject(choice2, display2)  }
-            { this.createPivotObject(choice1, display1)  }
-
-            { /*this.createPivotObject(setPivot, "block") */ }
-            { greeting }
-            { this.createProjectTypeToggle(this.state) }
-            { toggleChartsButton }
-            { toggleTipsButton }
-           
-        </div>
-        <div className={( this.state.showTips ? '' : styles.hideMe )}>
-          { infoPage }
-        </div>
-
-        <div className={( this.state.showCharts ? '' : styles.hideMe )}>
-
-          { chartPage }
-
-        </div>
-          <div>
-
-            <Stack padding={20} horizontal={true} horizontalAlign={"space-between"} tokens={stackButtonTokensBody}> {/* Stack for Projects and body */}
-              { /* this.createProjectChoices(this.state) */ }
-              <Stack horizontal={false} horizontalAlign={"start"} tokens={stackFormRowsTokens}>{/* Stack for Pivot Help and Projects */}
-                { this.getPivotHelpText(this.state, this.props)}
-                { listProjects }
-              </Stack>  {/* Stack for Pivot Help and Projects */}
-              { centerPane }
-              <Stack horizontal={false} horizontalAlign={"end"} tokens={stackFormRowsTokens}>{/* Stack for Buttons and Fields */}
-                { entryOptions }
-                { (timeSlider) }
-                <Stack horizontal={true} wrap={true} horizontalAlign={"end"} tokens={stackManualDateTokens}>{/* Stack for Buttons and Fields */}
-                { startDate }
-                { endDate }
-                </Stack>  {/* Stack for Buttons and Fields */}
-                { theTime }
-                { projectTitle }
-                { activity }
-                { comments }
-                { /* entryType */ }
-                <Stack horizontal={true} tokens={stackFormRowTokens}>{ projectID1 }{ projectID2 }</Stack>
-
-                { saveButtons }
-
-              </Stack>  {/* Stack for Buttons and Fields */}
-
-            </Stack> {/* Stack for Projects and body */}
-          </div>
-
-          <div></div><div><br/><br/></div>
-          <div style={{ paddingLeft: '20px', paddingRight: '20px' }}>
-            <div><h2>Recent TrackYourTime History { userName }</h2></div>
-            {(listBuild)}
-            { /* this.createHistoryItems(this.state) */ }
-          </div>
-
-
-        </div>
-      </div>
-    );
+  private _closeProjectEdit(){
+    console.log('Clicked _closeProjectEdit!');
+    //Update status field, Complete date and Completed by, then save, reload projects list
+    this.setState({ 
+      showProjectScreen: ProjectMode.False,
+     });
+  }
+  
+  private _parkProject(){
+    alert('Clicked _parkProject!');
+    //Update status field, Complete date and Completed by, then save, reload projects list
+    this.setState({ 
+     });
+  }
+  private _rejectProject(){
+    alert('Clicked _rejectProject!');
+    //Update status field, Complete date and Completed by, then save, reload projects list
+    this.setState({ 
+     });
+  }
+  private _closeProject(){
+    alert('Clicked _closeProject!');
+    //Update status field, Complete date and Completed by, then save, reload projects list
+    this.setState({ 
+     });
   }
 
 
@@ -1106,6 +1428,7 @@ export default class TrackMyTime7 extends React.Component<ITrackMyTime7Props, IT
   }
 
   private _getSelectedProject(items: any[], exitMe : boolean){
+    let selectedProject: IProject = null;
 
     if (this.state.userLoadStatus !== 'Complete') { return; }
     if (this.state.timeTrackerLoadStatus !== 'Complete') { return; }
@@ -1154,16 +1477,18 @@ export default class TrackMyTime7 extends React.Component<ITrackMyTime7Props, IT
 
     if (selectedProjectIndex === this.state.selectedProjectIndex) { return ;}
 
-
     let formEntry = this.state.formEntry;
 
     if (isItemNull) {
       formEntry = this.createFormEntry();
     } else {
       formEntry = this.updateFormEntry(formEntry, item);
-
     }
 
+    //2020-05-22:  Copying into separate object to pass to Project Edit screen.
+    if (isItemNull != null) {
+      selectedProject = JSON.parse(JSON.stringify(item));
+    }
 
     /**
      * This section was added to save the selected project index in the Pivot object so it can be retrieved and set when changing pivots.
@@ -1179,6 +1504,7 @@ export default class TrackMyTime7 extends React.Component<ITrackMyTime7Props, IT
       formEntry:formEntry, 
       blinkOnProject: this.state.blinkOnProject === 1 ? 2 : 1,
       selectedProjectIndex : selectedProjectIndex,
+      selectedProject: selectedProject,
       lastSelectedProjectIndex: this.state.selectedProjectIndex,
       lastTrackedClick: lastTrackedClick,
       clickHistory: clickHistory,
@@ -1820,6 +2146,12 @@ export default class TrackMyTime7 extends React.Component<ITrackMyTime7Props, IT
       let lastTrackedClick = 'Pivot: ' + thisFilter[0];
       clickHistory.push(lastTrackedClick);
 
+      //2020-05-22:  Copying into separate object to pass to Project Edit screen.
+      let selectedProject: IProject = null;
+      if (lastIndex != null) {
+        selectedProject = JSON.parse(JSON.stringify(projects.newFiltered[lastIndex]));
+      }
+
       this.setState({
         filteredCategory: item.props.headerText,
         projectMasterPriorityChoice: newProjectMasterPriorityChoice,
@@ -1830,6 +2162,7 @@ export default class TrackMyTime7 extends React.Component<ITrackMyTime7Props, IT
         searchWhere: ' in ' + item.props.headerText,
         //pivotDefSelKey: defaultSelectedKey,
         blinkOnProject: 0,
+        selectedProject: selectedProject,
         lastTrackedClick: lastTrackedClick,
         clickHistory: clickHistory,
         selectedProjectIndex: lastIndex,
@@ -1908,7 +2241,7 @@ export default class TrackMyTime7 extends React.Component<ITrackMyTime7Props, IT
       comments: timeTrackData.comments, // syntax similar to ProjID?
       active: timeTrackData.active,  //Used to indicate inactive projects
       everyone: timeTrackData.everyone, //Used to designate this option should be available to everyone.
-      sort: timeTrackData.sort, //Used to prioritize in choices.... ones with number go first in order, followed by empty
+      sortOrder: timeTrackData.sortOrder, //Used to prioritize in choices.... ones with number go first in order, followed by empty
       key: this.getProjectKey(timeTrackData),
 
       category1: timeTrackData.category1,
@@ -2233,7 +2566,7 @@ public toggleTips = (item: any): void => {
  *                                                                                                                         
  */
 
-  public buildSmartText (makeThisSmart) {
+  public buildSmartText (makeThisSmart: string, projListValue: string) {
 
     let projectText : string = makeThisSmart ;
     let isRequired : boolean = ( projectText && projectText.indexOf("\*") === 0 ) ? true : false ;
@@ -2252,6 +2585,7 @@ public toggleTips = (item: any): void => {
     let prefix : string = (projectString && lastIndexOfDots === projectString.length -3 ) ? projectString.substring(0,lastIndexOfDots) : null ;
     let mask : string = (makeThisSmart && makeThisSmart.indexOf('mask=')===0) ? makeThisSmart.replace('mask=','') : '';
     let thisProj : ISmartText = {
+      projListValue: projListValue,
       value: defaultIsPrefix ? "" : isHidden ? projectString : makeThisSmart,
       hidden: isHidden,
       required: isRequired,
@@ -2311,6 +2645,8 @@ public toggleTips = (item: any): void => {
 
     let selectCols: string = "*";
     let expandThese = "";
+
+    //These should only be columns COMMON to both lists
     let peopleColumns = ["Author","Editor","Team","Leader"];
     let peopleProps = ["Title","ID","Name"];
     let allColumns = [];
@@ -2328,7 +2664,10 @@ public toggleTips = (item: any): void => {
     if (expColumns.length > 0) { expandThese = expColumns.join(","); }
 
     let expandTheseTrack = expandThese + ',User';
-    let selectColsTrack = selectCols + ',User/Title,User/ID,User/Name';   
+    let selectColsTrack = selectCols + ',User/Title,User/ID,User/Name';
+
+    let expandTheseProj = expandThese + ',CompletedByTMT';
+    let selectColsProj = selectCols + ',CompletedByTMT/Title,CompletedByTMT/ID,CompletedByTMT/Name';   
 
     //Updated Jan 5, 2020 per https://pnp.github.io/pnpjs/getting-started/
     const projectWeb = Web(useProjectWeb);
@@ -2412,6 +2751,51 @@ public toggleTips = (item: any): void => {
       this.processCatch(e);
     });
 
+
+    // https://pnp.github.io/pnpjs/v1/sp/docs/fields/#filtering-fields
+    //const includeFields = [ 'Title', 'Author', 'Editor', 'Modified', 'Created' ];
+    //const filter3 = `Hidden eq false and (ReadOnlyField eq false or (${
+    //    includeFields.map(field => `InternalName eq '${field}'`).join(' or ')
+    //}))`;
+
+    const includeFields = [ 'ActivityType', 'Category1', 'Category2', 'StatusTMT', 'OptionsTMTCalc', 'ActivtyURLCalc'];
+    const filter3 = `(${
+        includeFields.map(field => `StaticName eq '${field}'`).join(' or ')
+    })`;
+
+    //projectWeb.lists.getByTitle(useProjectList).fields.filter(filter3).inBatch(batch).get().then((response) => {
+    projectWeb.lists.getByTitle(useProjectList).fields.filter(filter3).get().then((response) => {
+
+        console.log('Here are selected Project List Columns: ', response);
+        this.setState({  
+          loadOrder: (this.state.loadOrder === "") ? 'ProjColumns' : this.state.loadOrder + ' > ProjColumns',
+          projColumns : {
+
+            statusChoices: getColumnProp( 'StaticName', 'StatusTMT','Choices', response),
+            activityTMTChoices: getColumnProp( 'StaticName', 'ActivityType','Choices', response),
+            category1Choices: getColumnProp( 'StaticName', 'Category1','Choices', response),
+            category2Choices: getColumnProp( 'StaticName', 'Category2','Choices', response), 
+
+            statusDefault: getColumnProp( 'StaticName', 'StatusTMT','DefaultValue', response),
+            activityTMTDefault: getColumnProp( 'StaticName', 'ActivityType','DefaultValue', response),
+            category1Default: getColumnProp( 'StaticName', 'Category1','DefaultValue', response),
+            category2Default: getColumnProp( 'StaticName', 'Category2','DefaultValue', response),
+
+            optionsTMTCalc: getColumnProp( 'StaticName', 'OptionsTMTCalc','Formula', response),
+            activtyURLCalc: getColumnProp( 'StaticName', 'ActivtyURLCalc','Formula', response),
+
+          }});
+
+    }).catch((e) => {
+      console.log('ERROR:  projectWeb.lists.getByTitle(useProjectList).fields.filter(filter3)',useProjectList, e);
+      let projColumnsMessage = getHelpfullError(e);
+      this.setState({  
+        loadStatus: projColumnsMessage, 
+        loadError: this.state.loadError + '.  ' + projColumnsMessage, 
+        listError: true, //timeTrackerListError: true, 
+        timeTrackerLoadError: projColumnsMessage,});
+      this.processCatch(e);
+    });
 /***
  *                         d888b  d88888b d888888b      d8888b. d8888b.  .d88b.     d88b d88888b  .o88b. d888888b .d8888. 
  *                        88' Y8b 88'     `~~88~~'      88  `8D 88  `8D .8P  Y8.    `8P' 88'     d8P  Y8 `~~88~~' 88'  YP 
@@ -2424,39 +2808,19 @@ public toggleTips = (item: any): void => {
  */
 
     projectWeb.lists.getByTitle(useProjectList).items
-    .select(selectCols).expand(expandThese).filter(projectRestFilter).orderBy(projectSort,true).inBatch(batch).getAll()
+    .select(selectColsProj).expand(expandTheseProj).filter(projectRestFilter).orderBy(projectSort,true).inBatch(batch).getAll()
     .then((response) => {
       //console.log('useProjectList', response);
       //console.log('fetched Project Info:', response);
       trackMyProjectsInfo.projectData = response.map((p) => {
         //https://stackoverflow.com/questions/13142635/how-can-i-create-an-object-based-on-an-interface-file-definition-in-typescript
-        let daily: any = false;
-        let weekly: any = false;
-        let total: any = false;
 
-        if (p.TimeTarget) {
-          let ttOptions = p.TimeTarget.split(';');
-          for (let opt of ttOptions) {
-            let thisOption = opt.split('=');
-            if (thisOption[1] && thisOption[0].toLowerCase() === 'daily') {
-              daily = parseInt(thisOption[1]);
-            } else if (thisOption[1] && thisOption[0].toLowerCase() === 'weekly') {
-              weekly = parseInt(thisOption[1]);
-            } else if (thisOption[1] && thisOption[0].toLowerCase() === 'total') {
-              total = parseInt(thisOption[1]);
-            }
-          }
-        }
+        let targetInfo : IProjectTarget = this.createProjectTimeTracking(p.TimeTarget);
 
-        let targetInfo : IProjectTarget = {
-          value: p.TimeTarget,
-          daily: daily ? daily : 0,
-          weekly: weekly ? weekly : 0,
-          total: total ? total : 0,
-          dailyStatus: daily ? true : false,
-          weeklyStatus: weekly ? true : false,
-          totalStatus: total ? true : false,
-        };
+        //Capturing original values for use in Project Edit screen
+        let origProjectID1 = p.ProjectID1 === null ? "" : p.ProjectID1 + "";
+        let origProjectID2 = p.ProjectID2 === null ? "" : p.ProjectID2 + "";
+        let origComments = p.Comments === null ? "" : p.Comments + "";       
 
         let pOptions = [];
         if (p.OptionsTMT != null ) { pOptions = p.OptionsTMT.split(';'); }
@@ -2517,7 +2881,8 @@ public toggleTips = (item: any): void => {
          * Get Project Pre-made Activity Link URL
          */
         let pActivityType = p.ActivityType;  //Label part of Activity Type ( before the | )
-        let pActivityID = p.ActivityTMT; //Test value from Activity Column in list
+        //Activity ID is later .split(;) so it's best to just make it empty string now.
+        let pActivityID = p.ActivityTMT === null ? '' : p.ActivityTMT; //Test value from Activity Column in list
         let pActivtyOptionsCalc = p.ActivtyOptionsCalc; //Options for formatting the Icon
 
         let pActivityURL = p.ActivtyURLCalc;
@@ -2613,6 +2978,8 @@ public toggleTips = (item: any): void => {
           font: getFontOptions(pOptions,'='),
           icon: getIconOptions(pOptions,'='),
 
+          projectEditOptions: p.ProjectEditOptions == null ? defProjEditOptions : cleanProjEditOptions(p.ProjectEditOptions),
+
         };
 
         //Attempt to split ActivityType by | in case formatting or icon is included.
@@ -2644,34 +3011,41 @@ public toggleTips = (item: any): void => {
           editLink: null , //Link to view/edit item link
           titleProject: thisProjectTitle,
 
-          comments: this.buildSmartText(p.Comments),
+          comments: this.buildSmartText(p.Comments, origComments),
           //2020-05-13:  Replace Active with StatusTMT  when Status = 9 then active = null, Status = 8 then active = false else true
           active: this.convertStatusToActive(p.StatusNumber),
           everyone: p.Everyone,
-          sort: p.Sort,
+          sortOrder: p.SortOrder,
 
           category1: p.Category1,
           category2: p.Category2,
 
-          leader: p.Leader ,
-          team: p.Team,
+          leader: p.Leader , // BE SURE TO ADD PEOPLE COLUMNS TO EXPANDED COLUMNS FIRST!
+          team: p.Team, // BE SURE TO ADD PEOPLE COLUMNS TO EXPANDED COLUMNS FIRST!
 
           story: p.Story,
           chapter: p.Chapter,
 
-          leaderId: p.LeaderId,
-          teamIds: p.TeamId,
+          leaderId: p.Leader == null ? null : p.LeaderId, // BE SURE TO ADD PEOPLE COLUMNS TO EXPANDED COLUMNS FIRST!
+          teamIds: p.Team == null ? null : p.TeamId, // BE SURE TO ADD PEOPLE COLUMNS TO EXPANDED COLUMNS FIRST!
 
           filterFlags: [],
-
-          projectID1: this.buildSmartText(p.ProjectID1),
-          projectID2: this.buildSmartText(p.ProjectID2),
+          
+          projectID1: this.buildSmartText(p.ProjectID1, origProjectID1),
+          projectID2: this.buildSmartText(p.ProjectID2, origProjectID2),
 
           timeTarget: targetInfo,
           projOptions: projOptions,
           ccEmail: p.CCEmail,
           ccList: p.CCList,
-        
+
+          //Task related fields:
+          status: p.StatusTMT,
+          dueDate: p.DueDateTMT,
+          completedDate: p.CompletedDateTMT,
+          completedBy: p.CompletedByTMT == null ? null : p.CompletedByTMT, // BE SURE TO ADD PEOPLE COLUMNS TO EXPANDED COLUMNS FIRST!
+          completedById: p.CompletedByTMT == null ? null : p.CompletedByTMTId, // BE SURE TO ADD PEOPLE COLUMNS TO EXPANDED COLUMNS FIRST!
+
           //Values that relate to project list item
           // sourceProject: , //Add URL back to item
         };
@@ -2782,7 +3156,7 @@ public toggleTips = (item: any): void => {
           id: item.Id ,
           editLink: null , //Link to view/edit item link
           titleProject : item.Title ,
-          comments: this.buildSmartText(item.Comments),
+          comments: this.buildSmartText(item.Comments, item.Comments),
           
           //2020-05-13:  Replace Active with StatusTMT  when Status = 9 then active = null, Status = 8 then active = false else true
           active: this.convertStatusToActive(item.StatusNumber),
@@ -2800,8 +3174,8 @@ public toggleTips = (item: any): void => {
 
           filterFlags: [],
 
-          projectID1 : this.buildSmartText(item.ProjectID1) ,  //Example Project # - look for strings starting with * and ?
-          projectID2 : this.buildSmartText(item.ProjectID2) ,  //Example Cost Center # - look for strings starting with * and ?
+          projectID1 : this.buildSmartText(item.ProjectID1, item.ProjectID1) ,  //Example Project # - look for strings starting with * and ?
+          projectID2 : this.buildSmartText(item.ProjectID2, item.ProjectID2) ,  //Example Cost Center # - look for strings starting with * and ?
 
           //Values that relate to project list item
           sourceProject : item.SourceProject , //Link back to the source project list item.
@@ -3688,10 +4062,10 @@ public toggleTips = (item: any): void => {
         listProjects: listProjects,
         id: response.data.Id,
         entryType: response.data.EntryType,
-        comments: this.buildSmartText(response.data.Comments),
-        projectID1 : this.buildSmartText(response.data.ProjectID1) ,  //Example Project # - look for strings starting with * and ?
-        projectID2 : this.buildSmartText(response.data.ProjectID2) ,  //Example Cost Center # - look for strings starting with * and ?
-        thisTimeObj: makeTheTimeObject(response.data.StartTime),
+        comments: this.buildSmartText(response.data.Comments, response.data.Comments),
+        projectID1 : this.buildSmartText(response.data.ProjectID1, response.data.ProjectID1) ,  //Example Project # - look for strings starting with * and ?
+        projectID2 : this.buildSmartText(response.data.ProjectID2, response.data.ProjectID2) ,  //Example Cost Center # - look for strings starting with * and ?
+        thisTimeObj: makeTheTimeObject(response.data.StartTime, response.data.StartTime),
       
         hoursEarly : hoursEarly,
         hoursLate : hoursLate,
