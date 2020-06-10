@@ -1,5 +1,8 @@
 import * as React from 'react';
 
+//https://webdevbythebay.com/create-a-sharepoint-app-with-react-styling/
+import { getTheme, mergeStyleSets } from 'office-ui-fabric-react/lib/Styling';
+
 import * as strings from 'TrackMyTime7WebPartStrings';
 
 //import * as links from './AllLinks';
@@ -12,7 +15,6 @@ import {CommandBarButton,} from "office-ui-fabric-react/lib/Button";
 
 import ButtonCompound from '../createButtons/ICreateButtons';
 import { IButtonProps, ISingleButtonProps, IButtonState } from "../createButtons/ICreateButtons";
-import { createIconButton } from "../createButtons/IconButton";
 import { Icon  } from 'office-ui-fabric-react/lib/Icon';
 
 import { Dropdown, DropdownMenuItemType, IDropdownStyles, IDropdownOption } from 'office-ui-fabric-react/lib/Dropdown';
@@ -22,11 +24,6 @@ import { dateConvention ,showMonthPickerAsOverlay,showWeekNumbers,timeConvention
 import { DateTimePicker, DateConvention, TimeConvention, TimeDisplayControlType } from '@pnp/spfx-controls-react/lib/dateTimePicker';
 import { Toggle, IToggleStyleProps, IToggleStyles } from 'office-ui-fabric-react/lib/Toggle';
 
-import * as formBuilders from '../fields/textFieldBuilder';
-import * as choiceBuilders from '../fields/choiceFieldBuilder';
-import * as sliderBuilders from '../fields/sliderFieldBuilder';
-import * as smartLinks from '../ActivityURL/ActivityURLMasks';
-import * as dateBuilders from '../fields/dateFieldBuilder';
 import { TextField,  IStyleFunctionOrObject, ITextFieldStyleProps, ITextFieldStyles } from "office-ui-fabric-react";
 
 import { PeoplePicker, PrincipalType } from "@pnp/spfx-controls-react/lib/PeoplePicker";
@@ -46,12 +43,22 @@ import styles from './ProjectPage.module.scss';
 import stylesT from '../TrackMyTime7.module.scss';
 import stylesInfo from '../HelpInfo/InfoPane.module.scss';
 
+import { HoverCard, HoverCardType } from 'office-ui-fabric-react/lib/HoverCard';
+
 export enum ProjectMode { False, Edit, Copy, New }
 
-const iconClass = mergeStyles({
+const iconClassAction = mergeStyles({
   fontSize: 18,
   fontWeight: "bolder",
   color: "black",
+  //margin: '0px 2px',
+  paddingRight: '10px',
+  verticalAlign: 'bottom',
+});
+
+const iconClassInfo = mergeStyles({
+  fontSize: 18,
+  color: "blue",
   //margin: '0px 2px',
   paddingRight: '10px',
   verticalAlign: 'bottom',
@@ -268,17 +275,56 @@ export default class MyProjectPage extends React.Component<IProjectPageProps, IP
 
         let testItems = this.state.testItems == null ? null : <div><div><h2>Here is the save object :)</h2></div><div>{ JSON.stringify(this.state.testItems) }</div></div>;
 
-
         let projHistory = null;
         if (this.props.selectedProject.history != null) {
           let historyItems : IProjectHistory[]= JSON.parse('[' + this.props.selectedProject.history + ']');
           let letHistoryRows = historyItems.map( h => { 
+
+            let actionCell = <div><span className={ styles.nowWrapping }>
+              <Icon iconName={h.icon} className={iconClassAction} />
+              { h.verb }</span>              
+            </div>;
+
+            let normalIcon = <Icon iconName="Info" className={iconClassInfo} />;
+        
+            let detailLines = h.details.split('|');
+
+            let detail = <div>
+              <h3>Changes</h3>
+              <ul> 
+                { detailLines.map( i => { return <li>{i}</li>;  }) } 
+              </ul>
+            </div>;
+
+            const onRenderHoverCard = (item: any): JSX.Element => {
+              return <div className={styles.hoverCard} style={{padding: 30}}>
+                <div>{ detail }</div>
+              </div>;
+            };
+
+            let detailsCard = <div>
+              <HoverCard
+                cardDismissDelay={300}
+                type={HoverCardType.plain}
+                plainCardProps={{
+                  onRenderPlainCard: onRenderHoverCard,
+                  renderData: 'testRenderData'
+                }}>
+                { normalIcon }
+              </HoverCard>
+            </div>;
+
             return <tr><td className={ styles.nowWrapping }>{new Date(h.timeStamp).toLocaleString()}</td>
             <td className={ styles.nowWrapping }>{ getBestTimeDelta(h.timeStamp,new Date().toUTCString()) }</td>
             <td className={ styles.nowWrapping }>{h.userName}</td>
-            <td className={ styles.nowWrapping }><span><Icon iconName={h.icon} className={iconClass} /></span>{h.verb}</td>
-            <td>{h.details}</td>
-            </tr>; } );
+            <td className={ styles.nowWrapping }> {  actionCell  }</td>
+            { /* <td>{h.details }</td> */ }
+            { <td>{detailsCard}</td> }
+            { /*  <td>xyz</td> */ }
+
+            </tr>; 
+          }); //Edn mapping of rows
+
           projHistory = <div className={ stylesInfo.infoPane }><h2>Project History</h2>
           <table className={stylesInfo.infoTable}>
               <tr><th>TimeStamp</th><th>When</th><th>User</th><th>Action</th><th>Details</th></tr>

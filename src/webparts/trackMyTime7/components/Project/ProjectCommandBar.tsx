@@ -5,9 +5,9 @@ import * as strings from 'TrackMyTime7WebPartStrings';
 //import * as links from './AllLinks';
 
 import { ITrackMyTime7Props } from '../ITrackMyTime7Props';
-import { ITrackMyTime7State, IProjectOptions } from '../ITrackMyTime7State';
+import { ITrackMyTime7State, IProjectOptions, IProjectAction  } from '../ITrackMyTime7State';
 
-import { MyCons } from '../TrackMyTime7';
+import { MyCons, projActions } from '../TrackMyTime7';
 
 import { Fabric, initializeIcons } from 'office-ui-fabric-react';
 import { CommandBar, ICommandBarItemProps } from 'office-ui-fabric-react/lib/CommandBar';
@@ -30,6 +30,10 @@ export interface ICommandBarProps {
     cancelProject?: (item?: any, ev?: React.MouseEvent<HTMLElement>) => void;
     completeProject?: (item?: any, ev?: React.MouseEvent<HTMLElement>) => void;
 
+    reviewProject?: (item?: any, ev?: React.MouseEvent<HTMLElement>) => void;
+    planProject?: (item?: any, ev?: React.MouseEvent<HTMLElement>) => void;
+    processProject?: (item?: any, ev?: React.MouseEvent<HTMLElement>) => void;
+    
     commandClass?: string;
     setLayout?: string;
 
@@ -92,47 +96,37 @@ export default class MyCommandBar extends React.Component<ICommandBarProps, ICom
         }
     }
     
+    private buildCommandBarProps ( thisAction: IProjectAction , onClick: any ) {
+
+        const newProps: ICommandBarItemProps = { key: thisAction.status, text: thisAction.status,  name: '',   ariaLabel: thisAction.status, commandBarButtonAs: customButton,
+            iconProps: {  iconName: thisAction.icon, },
+            onClick: () => onClick(),
+        };
+
+        return newProps;
+    }
+    
     //public render(): JSX.Element {
     public render(): React.ReactElement<ICommandBarProps> {
         //2020-05-19:  Copied from Socialiis7/Master CommandBar.tsx
         console.log('ProjectCommandBar hasProject:', this.props.hasProject);
 
-        //2020-05-19:  Format copied from Socialiis7/Master CommandBar.tsx
-        const _new : ICommandBarItemProps = { key: 'new', text: 'New',  name: '',   ariaLabel: 'New', commandBarButtonAs: customButton,
-            iconProps: {  iconName: 'Add', },
-            onClick: () => this.props.newProject(),
-        };
+        const _new : ICommandBarItemProps = this.buildCommandBarProps(projActions.new, this.props.newProject);
+        const _edit : ICommandBarItemProps = this.buildCommandBarProps(projActions.edit, this.props.editProject);
+        const _copy : ICommandBarItemProps = this.buildCommandBarProps(projActions.copy, this.props.copyProject);
 
-        const _edit : ICommandBarItemProps = { key: 'edit', text: 'Edit',  name: '',   ariaLabel: 'Edit', commandBarButtonAs: customButton,
-            iconProps: {  iconName: 'Edit', },
-            onClick: () => this.props.editProject(),
-        };
-
-        const _copy : ICommandBarItemProps = { key: 'copy', text: 'Copy',  name: '',   ariaLabel: 'Copy', commandBarButtonAs: customButton,
-            iconProps: {  iconName: 'Copy', },
-            onClick: () => this.props.copyProject(),
-        };
-
-        const _park : ICommandBarItemProps = { key: 'park', text: 'Park',  name: '',   ariaLabel: 'Park', commandBarButtonAs: customButton,
-            iconProps: {  iconName: 'Car', },
-            onClick: () => this.props.parkProject(),
-        };
-
-        const _reject : ICommandBarItemProps = { key: 'reject', text: 'Cancel',  name: '',   ariaLabel: 'Cancel', commandBarButtonAs: customButton,
-            iconProps: {  iconName: 'Cancel', },
-            onClick: () => this.props.cancelProject(),
-        };
-
-        const _complete : ICommandBarItemProps = { key: 'complete', text: 'Complete',  name: '',   ariaLabel: 'Complete', commandBarButtonAs: customButton,
-            iconProps: {  iconName: 'SkypeCheck', },
-            onClick: () => this.props.completeProject(),
-        };
+        const _park : ICommandBarItemProps = this.buildCommandBarProps(projActions.park, this.props.parkProject);
+        const _cancel : ICommandBarItemProps = this.buildCommandBarProps(projActions.cancel, this.props.cancelProject);
+        const _complete : ICommandBarItemProps = this.buildCommandBarProps(projActions.complete, this.props.completeProject);
+        const _review : ICommandBarItemProps = this.buildCommandBarProps(projActions.review, this.props.reviewProject);
+        const _plan : ICommandBarItemProps = this.buildCommandBarProps(projActions.plan, this.props.planProject);
+        const _process : ICommandBarItemProps = this.buildCommandBarProps(projActions.process, this.props.processProject);
 
         //2020-05-19:  Format copied from Socialiis7/Master CommandBar.tsx
         const _items: ICommandBarItemProps[] = [ _new, _edit, _copy ] ;
 
         //2020-05-19:  Format copied from Socialiis7/Master CommandBar.tsx
-        const _overFlowItems: ICommandBarItemProps[] = [  _park, _reject, _complete  ] ;
+        const _overFlowItems: ICommandBarItemProps[] = [  _review, _plan, _process, _park, _cancel, _complete  ] ;
 
         // <div className={ styles.container }></div>
         return (
