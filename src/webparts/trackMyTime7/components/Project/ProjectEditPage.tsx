@@ -36,6 +36,8 @@ import { statusChoices, activityTMTChoices, MyCons} from '../TrackMyTime7';
 import { getAge, getBestTimeDelta } from '../../../../services/dateServices';
 import { mergeStyles } from 'office-ui-fabric-react/lib/Styling';
 
+import { createIconButton } from '../createButtons/IconButton';
+
 // Initialize icons in case this example uses them
 initializeIcons();
 
@@ -77,9 +79,11 @@ const getProjectModeLabel =  (mode: ProjectMode): string =>  {
 export interface IProjectPageProps {
     showProjectScreen: ProjectMode;
     _closeProjectEdit: any;
+    _closeProjectReload: any;
     selectedProject: IProject;
     projectFields: IProjectFormFields;
     wpContext: WebPartContext;
+    currentUser: IUser;
 
     // 2 - Source and destination list information
     projectListTitle: string;
@@ -222,6 +226,9 @@ export default class MyProjectPage extends React.Component<IProjectPageProps, IP
 
         this._updateActivityID = this._updateActivityID.bind(this);   
         this._updateActivityType = this._updateActivityType.bind(this);   
+
+        this._addUserToField = this._addUserToField.bind(this);   
+       
         
     }
         
@@ -265,6 +272,11 @@ export default class MyProjectPage extends React.Component<IProjectPageProps, IP
         console.log('props.selectedProject:', this.props.selectedProject);
         console.log('state:', this.state);
         console.log('state.selectedProject:', this.state.selectedProject);
+
+        console.log('TEAM:', this.state.selectedProject.team);
+        console.log('TEAMIds:', this.state.selectedProject.teamIds);
+        console.log('LEADER:', this.state.selectedProject.leader);
+        console.log('LEADERId:', this.state.selectedProject.leaderId);
 
         let isSaveButtonDisabled = !this.checkEnableSave();
         let saveLabel = "Save";
@@ -333,6 +345,11 @@ export default class MyProjectPage extends React.Component<IProjectPageProps, IP
 
         } 
 
+        let saveFunction : any = null;
+        if (this.props.showProjectScreen === ProjectMode.New) { saveFunction = this.createNewProject.bind(this); }
+        if (this.props.showProjectScreen === ProjectMode.Edit) { saveFunction = this.saveExistingProject.bind(this); }
+        if (this.props.showProjectScreen === ProjectMode.Copy) { saveFunction = this.createNewProject.bind(this); }
+        
         const buttons: ISingleButtonProps[] =
         [{  disabled: false,  checked: true, primary: false,
             label: "Cancel", buttonOnClick: this.cancelForm.bind(this),
@@ -344,7 +361,7 @@ export default class MyProjectPage extends React.Component<IProjectPageProps, IP
           label: testLabel, buttonOnClick: this.testSaveProject.bind(this),
         },{
             disabled: isSaveButtonDisabled, checked: true, primary: true,
-            label: saveLabel, buttonOnClick: this.saveProject.bind(this),
+            label: saveLabel, buttonOnClick: saveFunction,
         }];
 
 
@@ -497,49 +514,48 @@ export default class MyProjectPage extends React.Component<IProjectPageProps, IP
 
     private testSaveProject() {
       console.log('saved form');
-
       if ( this.checkEnableSave() ) {
-
         let saveProject = this.buildProjectToSave(this.props.selectedProject, this.state.selectedProject, this.props.showProjectScreen );
-
         this.setState({ 
           testItems: saveProject,
         });
-
-        /*
-        const projectWeb = Web(this.props.projectListWeb);
-
-        projectWeb.lists.getByTitle(this.props.projectListTitle).items.add( saveProject ).then((response) => {
-
-        });
-
-        this.props._closeProjectEdit();
-        */
       }
+    }
 
-
-  }
-
-  private saveProject() {
+    private createNewProject() {
       console.log('saved form');
 
       if ( this.checkEnableSave() ) {
 
         let saveProject = this.buildProjectToSave(this.props.selectedProject, this.state.selectedProject, this.props.showProjectScreen );
 
-        this.setState({ 
-          testItems: null,
-        });
-
-        /*
         const projectWeb = Web(this.props.projectListWeb);
-
         projectWeb.lists.getByTitle(this.props.projectListTitle).items.add( saveProject ).then((response) => {
-
+          console.log('Heres the NEW Project:', response);
+          this.props._closeProjectReload();
+        }).catch((e) => {
+          alert(e);
         });
 
-        this.props._closeProjectEdit();
-        */
+      }
+    }
+
+    private saveExistingProject() {
+      console.log('saved form');
+
+      if ( this.checkEnableSave() ) {
+
+        let saveProject = this.buildProjectToSave(this.props.selectedProject, this.state.selectedProject, this.props.showProjectScreen );
+
+        const projectWebList = Web(this.props.projectListWeb).lists.getByTitle(this.props.projectListTitle);
+        console.log('List title to add to:', projectWebList.length);
+        projectWebList.items.getById(this.props.selectedProject.id).update( saveProject ).then((response) => {
+          console.log('Heres the saved Project:', response);
+          this.props._closeProjectReload();
+        }).catch((e) => {
+          alert(e);
+        });
+
       }
     }
 
@@ -586,11 +602,20 @@ export default class MyProjectPage extends React.Component<IProjectPageProps, IP
       let newVal = this.getProbjectValue(field, newProject);
 
       if ( mode === ProjectMode.Copy || mode === ProjectMode.New ) {
+        //Why do I have this separate loop for Copy and New??????
 
         if ( newVal === null ) {
 
-        } else if (field.type === "User" || field.type === "MultiUser" ) {
+        } else if (field.type === "MultiUser" ) {
           saveItem[field.column + "Id"] = newVal;
+
+        } else if (field.type === "User" ) { //Single User, can't be an array
+          let saveUser = newVal ? newVal.results[0] : null;
+          let origValX = origVal ? origVal.results[0] : null;
+          saveItem[field.column + "Id"] = saveUser;
+
+        } else if (field.name === "category1" || field.name === "category2" ) { //Single User, can't be an array
+          saveItem[field.column] = { results: [newVal] };
 
         } else {
           saveItem[field.column] = newVal;
@@ -610,8 +635,10 @@ export default class MyProjectPage extends React.Component<IProjectPageProps, IP
       } else if (field.type === "User" ) {
         //Add column and value to object
         if (JSON.stringify(origVal) !== JSON.stringify(newVal) ) {
-          console.log('updating ' + field.title + ' from ' + origVal + ' to ' + newVal);
-          saveItem[field.column + "Id"] = newVal;
+          let saveUser = newVal ? newVal.results[0] : null;
+          let origValX = origVal ? origVal.results[0] : null;
+          console.log('updating ' + field.title + ' from ' + origValX + ' to ' + saveUser);
+          saveItem[field.column + "Id"] = saveUser;
         }
 
       } else if (field.type === "MultiUser" ) {
@@ -620,6 +647,15 @@ export default class MyProjectPage extends React.Component<IProjectPageProps, IP
           console.log('updating ' + field.title + ' from ' + origVal + ' to ' + newVal);
           saveItem[field.column + "Id"] = newVal;
         }
+      
+      } else if (field.name === "category1" || field.name === "category2" ) { //Single User, can't be an array
+
+        if ( JSON.stringify(origVal) !== JSON.stringify(newVal) ) {
+          console.log('updating ' + field.title + ' from ' + origVal + ' to ' + newVal);
+          saveItem[field.column] = { results: [newVal] };
+        }
+
+
       } else if (origVal !== newVal ) {
         //Add column and value to object
         console.log('updating ' + field.title + ' from ' + origVal + ' to ' + newVal);
@@ -693,11 +729,9 @@ export default class MyProjectPage extends React.Component<IProjectPageProps, IP
         else if (field.name === "projectID1" || field.name === "projectID2" )  { defaultValue = this.state.selectedProject[field.name].projListValue; }
         else if (field.name === "timeTarget" )  { 
             defaultValue = this.state.selectedProject[field.name] === null ? '' : this.state.selectedProject[field.name].value;
-            console.log('createTextField: ' + field.name,this.state.selectedProject );
          }
          else if (field.name === "optionString")  { 
             defaultValue = this.state.selectedProject[field.name] === null ? '' : this.state.selectedProject.projOptions.optionString;
-            console.log('createTextField: ' + field.name,this.state.selectedProject );
 
          } else if (field.name === "activity") {
             defaultValue = this.state.selectedProject[field.name] === null ? '' : this.state.selectedProject.projOptions.activity;
@@ -766,13 +800,50 @@ export default class MyProjectPage extends React.Component<IProjectPageProps, IP
 
     }
 
-    private createPeopleField(field: IFieldDef, maxCount: number, _onChange: any, getStyles : IStyleFunctionOrObject<ITextFieldStyleProps, ITextFieldStyles>) {
+
+    private _addUserToField(ev: EventTarget){
+      var element2 = event.target as HTMLElement;
+      var element3 = event.currentTarget as HTMLElement;
+      let fieldID = this._findNamedElementID(element2);
+      let selectedProject = this.state.selectedProject;
+      alert(`Adding you to ${fieldID}`);
+      let projObjectName = this.props.projectFields[fieldID].name;
+      let projObjectType = this.props.projectFields[fieldID].type;
+      let okToUpdateUser: boolean = true;
+      let stateProject = this.state.selectedProject;
+      if ( projObjectType === 'User') {
+        stateProject[projObjectName + 'Id'] = this.props.currentUser.id;
+        stateProject[projObjectName] = this.props.currentUser;
+
+      } else if ( projObjectType === 'MultiUser'){
+
+        if (stateProject[projObjectName + 'Ids'] == null ) {
+          stateProject[projObjectName + 'Ids'] = [this.props.currentUser.id];
+          stateProject[projObjectName] = [this.props.currentUser];
+
+        } else if (stateProject[projObjectName + 'Ids'].indexOf(this.props.currentUser.id) < 0 ) { 
+          stateProject[projObjectName + 'Ids'].push(this.props.currentUser.id);
+          stateProject[projObjectName].push(this.props.currentUser);
+
+        } else { alert('You are already here :)'); okToUpdateUser = false; }
+
+      } else {
+        okToUpdateUser = false;
+        alert ('Encountered strange error in _addUserToField... unexpected field type!');
+      }
+      if (  okToUpdateUser === true) {
+        this.setState({ selectedProject: stateProject });
+        this.render();
+      } 
+
+    }
+
+    private createPeopleField(field: IFieldDef, maxCount: number, _onChange: any, addYouToField: any, getStyles : IStyleFunctionOrObject<ITextFieldStyleProps, ITextFieldStyles>) {
 
       let users: IUser[] = maxCount === 1 ? [this.state.selectedProject[field.name]] : this.state.selectedProject[field.name];
 
       let emails: string[] = users == null ? [] : users.map( u => {
         if ( u == null ) { 
-          console.log('Null User Structure for createPeopleField', users, u);
           //alert('Unknown User Structure for createPeopleField: ' +  JSON.stringify(u));
           return null;
         }
@@ -790,7 +861,6 @@ export default class MyProjectPage extends React.Component<IProjectPageProps, IP
           let uProps = uName.split('|');
           let expectedEmailIndex = 2;
           if (uProps.length === 3 && uProps[expectedEmailIndex].indexOf('@') > -1) {
-            console.log('User ' + uProps[expectedEmailIndex] + ' is made up of :', this.state.selectedProject[field.name] );
             return uProps[expectedEmailIndex];
           }
         }
@@ -800,9 +870,12 @@ export default class MyProjectPage extends React.Component<IProjectPageProps, IP
         return null;
       });
 
+      let addUserButton = createIconButton('FollowUser','Add you',addYouToField, null, null );
+
         return (
             // Uncontrolled
-            <div id={ pageIDPref + field.column } style={{ width: fieldWidth }}>
+            <div id={ pageIDPref + field.column } style={{ width: fieldWidth }} className={ styles.peopleBlock}>
+              <div className={styles.addMeButton}>{ addUserButton } </div>
                 <PeoplePicker
                     context={this.props.wpContext}
                     defaultSelectedUsers={ emails }
@@ -817,6 +890,7 @@ export default class MyProjectPage extends React.Component<IProjectPageProps, IP
                     principalTypes={[PrincipalType.User]}
                     resolveDelay={1000} 
                     ensureUser={true}
+                    peoplePickerWPclassName={styles.fieldWithIconButton}
                 /></div>
         );
 
@@ -972,7 +1046,6 @@ private _updateToggleState(ev: EventTarget){
 
   private buildProjectTtitle(isVisible: boolean) {
 
-    
     const getTitleErrorMessage = (value: string): string => {
       let mess = getErrorMessage(value,this.props.selectedProject.titleProject, 5, true, this.props.showProjectScreen);
       return mess;
@@ -1080,8 +1153,8 @@ private buildPeopleFields(isVisible: boolean) {
   />;
 
     //let everyone = this.createTextField(this.props.projectFields.Everyone, this._genericFieldUpdate.bind(this), this.getPeopleStyles );
-    let leader = this.createPeopleField(this.props.projectFields.Leader, 1, this._updateLeader.bind(this), this.getPeopleStyles );
-    let team = this.createPeopleField(this.props.projectFields.Team, 5, this._updateTeam.bind(this), this.getPeopleStyles );
+    let leader = this.createPeopleField(this.props.projectFields.Leader, 1, this._updateLeader.bind(this), this._addUserToField.bind(this), this.getPeopleStyles );
+    let team = this.createPeopleField(this.props.projectFields.Team, 5, this._updateTeam.bind(this), this._addUserToField.bind(this), this.getPeopleStyles );
 
     let fields =
     <div 
@@ -1144,7 +1217,6 @@ private buildPeopleFields(isVisible: boolean) {
           let uProps = uName.split('|');
           let expectedEmailIndex = 2;
           if (uProps.length === 3 && uProps[expectedEmailIndex].indexOf('@') > -1) {
-            console.log('User ' + uProps[expectedEmailIndex] + ' is made from :', newValue );
 
             //This needs to match up with structure required in the this.createPeopleField
             return {
@@ -1252,7 +1324,7 @@ private buildTaskFields(isVisible: boolean) {
     let isDueDateRequired: boolean = true;
     let dueDate = this.createDateField(this.props.projectFields.DueDateTMT, this._updateDueDate.bind(this), isDueDateRequired, this.getTaskStyles );
     let completedDate = this.createDateField(this.props.projectFields.CompletedDateTMT, this._updateCompleteDate.bind(this), false, this.getTaskStyles );
-    let completedBy = this.createPeopleField(this.props.projectFields.CompletedByTMT , 1, this._updateCompletedBy.bind(this), this.getPeopleStyles );
+    let completedBy = this.createPeopleField(this.props.projectFields.CompletedByTMT , 1, this._updateCompletedBy.bind(this),  this._addUserToField.bind(this), this.getPeopleStyles );
 
     let fields =
     <div style={{ backgroundColor: colorTask.light, padding: 10, paddingBottom: 20 }}>
